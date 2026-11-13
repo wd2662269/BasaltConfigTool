@@ -730,6 +730,7 @@ namespace BasaltConfigTool
                 case "number": return "数字";
                 case "enum": return "枚举";
                 case "string-list": return "字符串列表";
+                case "int-array": return "整数数组（逗号分隔）";
                 default: return "字符串";
             }
         }
@@ -811,13 +812,41 @@ namespace BasaltConfigTool
 
             if (old.Kind == JsonKind.Array)
             {
+                // 元素类型要跟着原数组走：全是数字就写数字，全是布尔就写布尔，否则当字符串。
+                // 之前这里一律生成字符串，会把 [1, 47] 悄悄写成 ["1", "47"]，
+                // 引擎就会拒绝这个键（control-vector-layer-range 就是这么坏的）。
+                bool allNum = old.Items.Count > 0;
+                bool allBool = old.Items.Count > 0;
+                for (int k = 0; k < old.Items.Count; k++)
+                {
+                    if (old.Items[k].Kind != JsonKind.Number) allNum = false;
+                    if (old.Items[k].Kind != JsonKind.Bool) allBool = false;
+                }
+
                 JsonNode arr = JsonNode.NewArray();
                 string[] parts = text.Split(',');
                 for (int i = 0; i < parts.Length; i++)
                 {
                     string p = parts[i].Trim().Trim('"');
                     if (p.Length == 0) continue;
-                    arr.Items.Add(JsonNode.NewString(p));
+                    if (allNum)
+                    {
+                        double d;
+                        if (!double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
+                            throw new Exception("这个键是数字数组，\"" + p + "\" 不是数字。\r\n" +
+                                                "元素之间用逗号分隔，例如 1, 47");
+                        arr.Items.Add(JsonNode.NewNumber(p));
+                    }
+                    else if (allBool)
+                    {
+                        if (p == "true") arr.Items.Add(JsonNode.NewBool(true));
+                        else if (p == "false") arr.Items.Add(JsonNode.NewBool(false));
+                        else throw new Exception("这个键是布尔数组，\"" + p + "\" 不是 true/false");
+                    }
+                    else
+                    {
+                        arr.Items.Add(JsonNode.NewString(p));
+                    }
                 }
                 return arr;
             }
@@ -1032,6 +1061,23 @@ namespace BasaltConfigTool
                     case "number":
                         if (m.Value.Kind != JsonKind.Number)
                             sb.AppendLine("* " + where + "." + m.Key + " ：应该是数字。");
+                        break;
+                    case "int-array":
+                        if (m.Value.Kind != JsonKind.Array)
+                            sb.AppendLine("* " + where + "." + m.Key +
+                                          " ：应该是数字数组，例如 [1, 47]。写成一个字符串会让引擎启动失败（unknown argument）。");
+                        else
+                        {
+                            for (int k = 0; k < m.Value.Items.Count; k++)
+                            {
+                                if (m.Value.Items[k].Kind != JsonKind.Number)
+                                {
+                                    sb.AppendLine("* " + where + "." + m.Key +
+                                                  " ：数组里第 " + (k + 1) + " 个元素不是数字。");
+                                    break;
+                                }
+                            }
+                        }
                         break;
                     case "enum":
                         if (m.Value.Kind != JsonKind.String)
