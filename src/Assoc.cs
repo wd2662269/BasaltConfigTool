@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace BasaltConfigTool
@@ -42,7 +43,7 @@ namespace BasaltConfigTool
             for (int i = 0; i < files.Length; i++)
             {
                 string text;
-                try { text = File.ReadAllText(files[i]); }
+                try { text = ReadCmdText(files[i]); }
                 catch { continue; }
 
                 bool named = NamesConfig(text, configFileName);
@@ -67,6 +68,23 @@ namespace BasaltConfigTool
             return found;
         }
 
+        /// <summary>
+        /// 读一个 .cmd 的文本。中文 Windows 上批处理多半是 GBK（cp936）落的盘，
+        /// 直接按 UTF-8 读会把中文文件名变成替换字符，关联就永远对不上。
+        /// 所以先按严格 UTF-8 试，失败了再退回系统 ANSI 代码页。
+        /// </summary>
+        static string ReadCmdText(string path)
+        {
+            byte[] raw = File.ReadAllBytes(path);
+            try
+            {
+                return new UTF8Encoding(false, true).GetString(raw);
+            }
+            catch (DecoderFallbackException)
+            {
+                return Encoding.Default.GetString(raw);
+            }
+        }
         static string FirstConfigArgument(string text)
         {
             Match m = ConfigFileFlag.Match(text);
