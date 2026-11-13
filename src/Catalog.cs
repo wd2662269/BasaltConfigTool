@@ -372,10 +372,20 @@ namespace BasaltConfigTool
               "Flash-Next 专用。加到残差流上的 GGUF 控制向量，缩放为 1。请求里用 experimental_speed_projection 切换。");
             K("control-vector-scaled", "带缩放的控制向量", "string", "关闭", null, MG,
               "Flash-Next 专用。格式 FILE:SCALE[,...]。");
-            K("control-vector-layer-range", "控制向量层范围", "string", "1 到最后一层", null, MG,
-              "Flash-Next 专用。作用在哪几层，闭区间，写成 \"A B\"。");
+            K("control-vector-layer-range", "控制向量层范围", "int-array", "[1, 47]", null, MG,
+              "Flash-Next 专用。控制向量作用在哪几层，闭区间。\r\n" +
+              "\r\n" +
+              "**JSON 里必须是两个数字的数组**，例如 [1, 47]。\r\n" +
+              "写成一个字符串 \"1 47\" 会让引擎启动直接失败：\r\n" +
+              "    [server] error: ....basalt: unknown argument: project\r\n" +
+              "原因是引擎不按空格拆这一项 —— 整串被 atoi 成第一个数，第二次取值\r\n" +
+              "就会把后面的 --cvec-mode 吃掉，值 project 变成\"未知参数\"。\r\n" +
+              "\r\n" +
+              "层号：本模型 48 层，索引 0..47。第 0 层永远控不到（引擎内部把\r\n" +
+              "first <= 0 一律改回 1），所以常用值就是 [1, 47]，也等于默认值。");
             K("cvec-mode", "控制向量作用方式", "enum", "add", "add,project", MG,
-              "add = h += s·v；project = h -= s·(h·v)·v。");
+              "add = h += s·v（默认）；project = h -= s·(h·v)·v，v 是单位向量。\r\n" +
+              "消融（去拒绝方向）用 project。");
             K("cvec-dir", "控制向量方向", "string", "per-layer", null, MG,
               "per-layer = 每层用自己的方向；single:L = 全部用第 L 层的。");
 
@@ -481,6 +491,26 @@ namespace BasaltConfigTool
                     }
                 case "string-list":
                     return JsonNode.NewArray();
+                case "int-array":
+                    {
+                        // 默认值写成 "[1, 47]" 这种形式，直接解析成数字数组
+                        string d = (m.Default == null ? "" : m.Default).Trim();
+                        if (d.StartsWith("[") && d.EndsWith("]")) d = d.Substring(1, d.Length - 2);
+                        JsonNode arr = JsonNode.NewArray();
+                        string[] parts = d.Split(',');
+                        for (int i = 0; i < parts.Length; i++)
+                        {
+                            string p = parts[i].Trim();
+                            double v;
+                            if (p.Length == 0) continue;
+                            if (!double.TryParse(p, System.Globalization.NumberStyles.Float,
+                                    System.Globalization.CultureInfo.InvariantCulture, out v)) continue;
+                            arr.Items.Add(JsonNode.NewNumber(v.ToString(
+                                (v == Math.Floor(v)) ? "0" : "0.###",
+                                System.Globalization.CultureInfo.InvariantCulture)));
+                        }
+                        return arr;
+                    }
                 default:
                     return JsonNode.NewString(m.Default == null ? "" : m.Default);
             }
