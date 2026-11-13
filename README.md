@@ -420,7 +420,7 @@ JSON 本身不支持注释，Basalt 的配置文件里也没有注释。
 ### 编译
 
 ```cmd
-git clone https://github.com/<你的用户名>/BasaltConfigTool.git
+git clone https://github.com/wd2662269/BasaltConfigTool.git
 cd BasaltConfigTool
 build.cmd
 ```
